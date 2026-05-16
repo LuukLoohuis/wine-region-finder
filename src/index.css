@@ -3,85 +3,72 @@
 @tailwind utilities;
 
 @layer base {
-  * { box-sizing: border-box; }
+  *, *::before, *::after { box-sizing: border-box; }
+
   body {
-    background: #FAF8F2;
-    color: #2C1810;
-    font-family: 'Crimson Text', serif;
+    background: #1a0a0a;
+    color: #f0e8d8;
+    font-family: 'Crimson Text', Georgia, serif;
     -webkit-font-smoothing: antialiased;
+    overflow: hidden;
   }
+
   h1, h2, h3, h4 {
-    font-family: 'Playfair Display', serif;
+    font-family: 'Playfair Display', Georgia, serif;
   }
 }
 
 @layer components {
-  .wine-card {
-    @apply bg-wine-cream border border-wine-gold/30 rounded-sm shadow-sm;
-    box-shadow: 2px 2px 0 rgba(74, 21, 40, 0.08);
+  .wine-btn {
+    @apply inline-flex items-center gap-2 px-4 py-2 font-display font-semibold text-sm rounded-sm
+           bg-wine-red text-wine-cream border border-wine-red/50
+           hover:bg-wine-mid transition-colors duration-150 cursor-pointer;
+    box-shadow: 0 2px 8px rgba(114, 47, 55, 0.4);
   }
 
-  .wine-btn-primary {
-    @apply bg-wine-dark text-wine-cream font-display font-semibold px-5 py-2.5 rounded-sm;
-    @apply hover:bg-wine-deep transition-colors duration-150;
-    box-shadow: 2px 2px 0 rgba(74, 21, 40, 0.3);
-  }
-
-  .wine-btn-outline {
-    @apply border border-wine-dark text-wine-dark font-display font-semibold px-4 py-2 rounded-sm;
-    @apply hover:bg-wine-blush/40 transition-colors duration-150;
-  }
-
-  .wine-label {
-    @apply font-mono text-[10px] uppercase tracking-[0.2em] text-wine-bark;
+  .wine-btn-ghost {
+    @apply inline-flex items-center gap-2 px-3 py-1.5 font-mono text-xs rounded-sm
+           border border-wine-border text-wine-light
+           hover:border-wine-light hover:text-wine-cream transition-colors;
   }
 
   .wine-input {
-    @apply w-full border border-wine-gold/40 bg-wine-paper text-wine-deep font-body text-sm px-3 py-2 rounded-sm;
-    @apply focus:outline-none focus:border-wine-dark focus:ring-1 focus:ring-wine-dark/20;
+    @apply w-full bg-wine-card border border-wine-border text-wine-cream text-sm px-3 py-2 rounded-sm
+           focus:outline-none focus:border-wine-red/70 focus:ring-1 focus:ring-wine-red/20
+           placeholder:text-wine-light/40;
+    font-family: 'Crimson Text', serif;
   }
 
-  .retro-border {
-    border: 1.5px solid #C9A84C;
-    box-shadow: 2px 2px 0 rgba(74, 21, 40, 0.15);
+  .wine-label {
+    @apply block font-mono text-[9px] uppercase tracking-[0.22em] text-wine-light/60 mb-1;
   }
 
-  .region-pulse {
-    animation: pulse-region 1s ease-out;
+  .panel-border {
+    border: 1px solid #4a2a2a;
   }
 }
 
-@keyframes pulse-region {
-  0%   { opacity: 1; transform: scale(1); }
-  50%  { opacity: 0.6; transform: scale(1.08); }
-  100% { opacity: 1; transform: scale(1); }
+/* Mapbox popup override */
+.mapboxgl-popup-content {
+  background: transparent !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  border-radius: 3px !important;
+}
+.mapboxgl-popup-tip { display: none !important; }
+
+/* Region pulse animation */
+@keyframes region-pulse {
+  0%   { opacity: 0.4; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.75; }
+}
+.region-pulsing {
+  animation: region-pulse 0.8s ease-in-out 3;
 }
 
-/* D3 map elements */
-.country-path {
-  fill: #F5F0E8;
-  stroke: #C9A84C;
-  stroke-width: 0.5px;
-  transition: fill 0.2s;
-}
-.country-path:hover { fill: #EDE8DC; }
-
-.region-path {
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-.region-path:hover { opacity: 1 !important; }
-
-.region-label {
-  font-family: 'Crimson Text', serif;
-  font-size: 9px;
-  fill: #4A1528;
-  pointer-events: none;
-  text-anchor: middle;
-  dominant-baseline: middle;
-}
-
-/* Scrollbar wine-themed */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: #F5F0E8; }
-::-webkit-scrollbar-thumb { background: #C9A84C; border-radius: 3px; }
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: #1a0a0a; }
+::-webkit-scrollbar-thumb { background: #4a2a2a; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #722F37; }
