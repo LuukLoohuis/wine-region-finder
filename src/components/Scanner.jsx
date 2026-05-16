@@ -57,7 +57,7 @@ export default function Scanner({ onResult, onClose }) {
   const [busy, setBusy]     = useState(false);
   const [error, setError]   = useState('');
   const [preview, setPreview] = useState(null);
-  const apiKey = import.meta.env.VITE_CLAUDE_API_KEY ?? '';
+  const apiKey = localStorage.getItem('wine_claude_key') ?? '';
 
   const handleFile = async (file) => {
     if (!file) return;
@@ -97,7 +97,7 @@ export default function Scanner({ onResult, onClose }) {
         <div className="p-5 space-y-4">
           {!apiKey && (
             <div className="bg-red-900/30 border border-red-700/50 rounded-sm p-3 text-sm text-red-300 font-mono">
-              ⚠ VITE_CLAUDE_API_KEY niet ingesteld in .env
+              ⚠ Sla eerst je Claude API-sleutel op via ⚙ instellingen
             </div>
           )}
 

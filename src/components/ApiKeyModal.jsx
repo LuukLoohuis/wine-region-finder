@@ -1,56 +1,80 @@
 import { useState } from 'react';
 
-export default function ApiKeyModal({ onSave }) {
-  const [key, setKey] = useState('');
+const STORAGE_KEY = 'wine_claude_key';
+
+export function useApiKey() {
+  return {
+    key: localStorage.getItem(STORAGE_KEY) ?? '',
+    save: (k) => localStorage.setItem(STORAGE_KEY, k),
+    clear: () => localStorage.removeItem(STORAGE_KEY),
+  };
+}
+
+export default function ApiKeyModal({ onClose }) {
+  const [key, setKey]     = useState(() => localStorage.getItem(STORAGE_KEY) ?? '');
   const [error, setError] = useState('');
 
-  const handleSave = () => {
-    if (!key.trim().startsWith('sk-ant-')) {
-      setError('Vul een geldige Anthropic API-sleutel in (begint met sk-ant-)');
+  const save = () => {
+    const trimmed = key.trim();
+    if (trimmed && !trimmed.startsWith('sk-ant-')) {
+      setError('Sleutel moet beginnen met sk-ant-');
       return;
     }
-    onSave(key.trim());
+    if (trimmed) localStorage.setItem(STORAGE_KEY, trimmed);
+    else localStorage.removeItem(STORAGE_KEY);
+    onClose();
   };
 
   return (
-    <div className="fixed inset-0 bg-wine-deep/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="wine-card retro-border max-w-md w-full p-6 space-y-5">
-        {/* Header */}
-        <div className="text-center space-y-1">
-          <div className="text-4xl mb-2">🍷</div>
-          <h1 className="font-display text-2xl font-bold text-wine-deep">Wijnkelder</h1>
-          <p className="font-body text-wine-bark text-sm italic">
-            Scan etiketten · Ontdek regio's · Bouw je kelder
-          </p>
+    <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-wine-panel panel-border w-full max-w-sm rounded-sm shadow-2xl overflow-hidden">
+
+        <div className="px-5 py-4 border-b border-wine-border flex items-center justify-between">
+          <div>
+            <div className="font-mono text-[9px] uppercase tracking-[0.3em] text-wine-light/40">Instellingen</div>
+            <h2 className="font-display text-lg font-bold text-wine-cream leading-none">API-sleutel</h2>
+          </div>
+          <button onClick={onClose} className="text-wine-light/30 hover:text-wine-cream text-2xl leading-none">×</button>
         </div>
 
-        <hr className="border-wine-gold/30" />
-
-        <div className="space-y-2">
-          <label className="wine-label block">Anthropic API-sleutel</label>
-          <p className="text-xs text-wine-bark font-body">
-            Nodig voor het lezen van wijnflasetiketten via Claude Vision.
-            Je sleutel wordt alleen lokaal opgeslagen — nooit verstuurd naar een server.
+        <div className="p-5 space-y-4">
+          <p className="font-body text-sm text-wine-light/60">
+            Je sleutel wordt <strong className="text-wine-cream">alleen lokaal opgeslagen</strong> in je browser
+            (localStorage) — nooit verstuurd naar een server of opgeslagen in code.
           </p>
-          <input
-            type="password"
-            placeholder="sk-ant-api03-..."
-            value={key}
-            onChange={(e) => { setKey(e.target.value); setError(''); }}
-            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-            className="wine-input"
-            autoFocus
-          />
-          {error && <p className="text-red-600 text-xs font-mono">{error}</p>}
+
+          <div>
+            <label className="wine-label">Anthropic API-sleutel</label>
+            <input
+              type="password"
+              value={key}
+              onChange={e => { setKey(e.target.value); setError(''); }}
+              onKeyDown={e => e.key === 'Enter' && save()}
+              placeholder="sk-ant-api03-…"
+              className="wine-input"
+              autoFocus
+            />
+            {error && <p className="font-mono text-[10px] text-red-400 mt-1">{error}</p>}
+          </div>
+
+          <p className="font-mono text-[9px] text-wine-light/30">
+            Sleutel ophalen → console.anthropic.com → API Keys
+          </p>
+
+          <div className="flex gap-3">
+            {key && localStorage.getItem(STORAGE_KEY) && (
+              <button
+                onClick={() => { localStorage.removeItem(STORAGE_KEY); setKey(''); }}
+                className="wine-btn-ghost text-sm px-3 py-2 text-red-400 border-red-900/50 hover:border-red-400"
+              >
+                Wissen
+              </button>
+            )}
+            <button onClick={save} className="wine-btn flex-1 justify-center py-2">
+              Opslaan
+            </button>
+          </div>
         </div>
-
-        <button onClick={handleSave} className="wine-btn-primary w-full text-center">
-          Kelder openen →
-        </button>
-
-        <p className="text-[10px] text-wine-bark/60 text-center font-mono">
-          Geen sleutel? → console.anthropic.com
-        </p>
       </div>
     </div>
   );

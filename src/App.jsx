@@ -3,6 +3,7 @@ import Map from './components/Map.jsx';
 import Scanner from './components/Scanner.jsx';
 import Cellar from './components/Cellar.jsx';
 import BottleCard from './components/BottleCard.jsx';
+import ApiKeyModal from './components/ApiKeyModal.jsx';
 import { useCollection } from './hooks/useCollection.js';
 import { getRegion } from './data/regions.js';
 
@@ -12,6 +13,7 @@ export default function App() {
   const [selectedRegion, setSelectedRegion] = useState(null);
   const [sidebarOpen,    setSidebarOpen]    = useState(true);
   const [scanning,       setScanning]       = useState(false);
+  const [showApiModal,   setShowApiModal]   = useState(false);
   const [pendingBottle,  setPendingBottle]  = useState(null); // scan result awaiting confirm
   const [pulsingRegion,  setPulsingRegion]  = useState(null);
   const [filter,         setFilter]         = useState({ country: '', region: '', year: '' });
@@ -54,13 +56,19 @@ export default function App() {
           </div>
         </div>
 
-        <button
-          onClick={() => setScanning(true)}
-          className="wine-btn"
-        >
-          <span>📷</span>
-          <span className="hidden sm:inline">Scan fles</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setScanning(true)} className="wine-btn">
+            <span>📷</span>
+            <span className="hidden sm:inline">Scan fles</span>
+          </button>
+          <button
+            onClick={() => setShowApiModal(true)}
+            className="wine-btn-ghost px-2.5 py-2 text-base"
+            title="API-sleutel instellen"
+          >
+            ⚙
+          </button>
+        </div>
       </header>
 
       {/* ── Main layout ─────────────────────────────────────────────── */}
@@ -166,6 +174,8 @@ export default function App() {
           onCancel={() => setPendingBottle(null)}
         />
       )}
+
+      {showApiModal && <ApiKeyModal onClose={() => setShowApiModal(false)} />}
     </div>
   );
 }
