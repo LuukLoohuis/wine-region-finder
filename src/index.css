@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  body {
+    background: #FAF8F2;
+    color: #2C1810;
+    font-family: 'Crimson Text', serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, h4 {
+    font-family: 'Playfair Display', serif;
+  }
+}
+
+@layer components {
+  .wine-card {
+    @apply bg-wine-cream border border-wine-gold/30 rounded-sm shadow-sm;
+    box-shadow: 2px 2px 0 rgba(74, 21, 40, 0.08);
+  }
+
+  .wine-btn-primary {
+    @apply bg-wine-dark text-wine-cream font-display font-semibold px-5 py-2.5 rounded-sm;
+    @apply hover:bg-wine-deep transition-colors duration-150;
+    box-shadow: 2px 2px 0 rgba(74, 21, 40, 0.3);
+  }
+
+  .wine-btn-outline {
+    @apply border border-wine-dark text-wine-dark font-display font-semibold px-4 py-2 rounded-sm;
+    @apply hover:bg-wine-blush/40 transition-colors duration-150;
+  }
+
+  .wine-label {
+    @apply font-mono text-[10px] uppercase tracking-[0.2em] text-wine-bark;
+  }
+
+  .wine-input {
+    @apply w-full border border-wine-gold/40 bg-wine-paper text-wine-deep font-body text-sm px-3 py-2 rounded-sm;
+    @apply focus:outline-none focus:border-wine-dark focus:ring-1 focus:ring-wine-dark/20;
+  }
+
+  .retro-border {
+    border: 1.5px solid #C9A84C;
+    box-shadow: 2px 2px 0 rgba(74, 21, 40, 0.15);
+  }
+
+  .region-pulse {
+    animation: pulse-region 1s ease-out;
+  }
+}
+
+@keyframes pulse-region {
+  0%   { opacity: 1; transform: scale(1); }
+  50%  { opacity: 0.6; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* D3 map elements */
+.country-path {
+  fill: #F5F0E8;
+  stroke: #C9A84C;
+  stroke-width: 0.5px;
+  transition: fill 0.2s;
+}
+.country-path:hover { fill: #EDE8DC; }
+
+.region-path {
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.region-path:hover { opacity: 1 !important; }
+
+.region-label {
+  font-family: 'Crimson Text', serif;
+  font-size: 9px;
+  fill: #4A1528;
+  pointer-events: none;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+/* Scrollbar wine-themed */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #F5F0E8; }
+::-webkit-scrollbar-thumb { background: #C9A84C; border-radius: 3px; }
