@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { REGIONS_GEOJSON } from '../data/wineRegions.js';
@@ -7,7 +7,6 @@ mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN ?? '';
 
 const SOURCE = 'wine-regions';
 
-// Build a GeoJSON FeatureCollection with bottle_count and is_pulsing injected
 function buildGeoJSON(collection, pulsingId) {
   const counts = {};
   collection.forEach(b => {
@@ -26,13 +25,12 @@ function buildGeoJSON(collection, pulsingId) {
   };
 }
 
-// Fill color based on bottle count using step expression
 const fillColorExpr = [
   'step', ['get', 'bottle_count'],
-  '#e8ddd0',    // 0 bottles
-  1, '#c49a8a', // 1-2
-  3, '#8B3A3A', // 3-5
-  6, '#5C1A1A', // 6+
+  '#e8ddd0',
+  1, '#c49a8a',
+  3, '#8B3A3A',
+  6, '#5C1A1A',
 ];
 
 export default function Map({ collection, selectedRegion, onRegionSelect, pulsingRegion }) {
@@ -40,19 +38,17 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
   const mapRef        = useRef(null);
   const popupRef      = useRef(null);
   const hoveredIdRef  = useRef(null);
+  const [mapError, setMapError] = useState(null);
 
-  // Keep a ref of selectedRegion so click handlers are never stale
   const selectedRegionRef = useRef(selectedRegion);
   useEffect(() => { selectedRegionRef.current = selectedRegion; }, [selectedRegion]);
 
-  // Sync source data whenever collection or pulsingRegion changes
   const syncSource = useCallback(() => {
     const map = mapRef.current;
     if (!map?.getSource(SOURCE)) return;
     map.getSource(SOURCE).setData(buildGeoJSON(collection, pulsingRegion));
   }, [collection, pulsingRegion]);
 
-  // Sync outline line-width when selectedRegion changes
   const syncSelection = useCallback(() => {
     const map = mapRef.current;
     if (!map?.getLayer('regions-outline')) return;
@@ -61,9 +57,13 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
     ]);
   }, [selectedRegion]);
 
-  // Init map once
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
+
+    if (!mapboxgl.accessToken) {
+      setMapError('Mapbox token ontbreekt — zet VITE_MAPBOX_TOKEN in .env.local');
+      return;
+    }
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
@@ -76,31 +76,34 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
     });
 
     mapRef.current = map;
+
     popupRef.current = new mapboxgl.Popup({
       closeButton: false,
       closeOnClick: false,
       offset: 10,
     });
 
+    map.on('error', (e) => {
+      setMapError(e.error?.message ?? String(e));
+    });
+
     map.on('load', () => {
-      // Add source
       map.addSource(SOURCE, {
         type: 'geojson',
         data: buildGeoJSON([], null),
+        generateId: true,
       });
 
-      // Fill layer
       map.addLayer({
         id: 'regions-fill',
         type: 'fill',
         source: SOURCE,
         paint: {
           'fill-color': fillColorExpr,
-          'fill-opacity': ['case', ['==', ['get', 'is_hovered'], 1], 0.95, 0.75],
+          'fill-opacity': ['case', ['boolean', ['feature-state', 'hovered'], false], 0.95, 0.75],
         },
       });
 
-      // Outline layer
       map.addLayer({
         id: 'regions-outline',
         type: 'line',
@@ -111,7 +114,6 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
         },
       });
 
-      // Label layer
       map.addLayer({
         id: 'regions-labels',
         type: 'symbol',
@@ -131,50 +133,37 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
         },
       });
 
-      // Hover: mousemove over fill
       map.on('mousemove', 'regions-fill', (e) => {
         map.getCanvas().style.cursor = 'pointer';
         const feature = e.features[0];
         const p = feature.properties;
 
-        // Update feature state for is_hovered
         if (hoveredIdRef.current !== null && hoveredIdRef.current !== feature.id) {
-          map.setFeatureState(
-            { source: SOURCE, id: hoveredIdRef.current },
-            { is_hovered: 0 }
-          );
+          map.setFeatureState({ source: SOURCE, id: hoveredIdRef.current }, { hovered: false });
         }
         hoveredIdRef.current = feature.id;
-        map.setFeatureState(
-          { source: SOURCE, id: feature.id },
-          { is_hovered: 1 }
-        );
+        map.setFeatureState({ source: SOURCE, id: feature.id }, { hovered: true });
 
         popupRef.current
           .setLngLat(e.lngLat)
           .setHTML(
             `<div style="background:#1C0A00;border:1px solid #5A2800;border-radius:8px;padding:8px 12px;color:#F5EDD8">
               <div style="font-size:13px;font-weight:600;font-family:'Playfair Display',serif">${p.name}</div>
-              <div style="color:#D4A96A;font-size:10px;margin-top:2px;font-family:Inter,sans-serif">${p.country} · ${p.bottle_count} fles${p.bottle_count !== 1 ? 'sen' : ''}</div>
+              <div style="color:#D4A96A;font-size:10px;margin-top:2px;font-family:Inter,sans-serif">${p.country} · ${p.bottle_count ?? 0} fles${(p.bottle_count ?? 0) !== 1 ? 'sen' : ''}</div>
             </div>`
           )
           .addTo(map);
       });
 
-      // Hover: mouseleave
       map.on('mouseleave', 'regions-fill', () => {
         map.getCanvas().style.cursor = '';
         popupRef.current.remove();
         if (hoveredIdRef.current !== null) {
-          map.setFeatureState(
-            { source: SOURCE, id: hoveredIdRef.current },
-            { is_hovered: 0 }
-          );
+          map.setFeatureState({ source: SOURCE, id: hoveredIdRef.current }, { hovered: false });
           hoveredIdRef.current = null;
         }
       });
 
-      // Click: select region and fly to bounds
       map.on('click', 'regions-fill', (e) => {
         const id = e.features[0].properties.id;
         const newSel = id === selectedRegionRef.current ? null : id;
@@ -190,13 +179,11 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
         }
       });
 
-      // Double-click on map (outside region click): reset
       map.on('dblclick', () => {
         onRegionSelect(null);
         map.flyTo({ center: [2.5, 46.5], zoom: 4.5, duration: 700 });
       });
 
-      // Load initial data and selection state
       syncSource();
       syncSelection();
     });
@@ -212,6 +199,20 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
   useEffect(() => { syncSelection(); }, [syncSelection]);
 
   return (
-    <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+      {mapError && (
+        <div style={{
+          position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
+          justifyContent: 'center', background: 'rgba(28,10,0,0.97)',
+          flexDirection: 'column', gap: '12px', fontFamily: 'Inter, sans-serif',
+          color: '#f9a8a8', fontSize: '13px', padding: '32px', textAlign: 'center',
+        }}>
+          <div style={{ fontSize: '28px' }}>⚠</div>
+          <div style={{ fontWeight: 600 }}>Kaart kon niet laden</div>
+          <div style={{ fontSize: '11px', color: 'rgba(200,180,154,0.5)', maxWidth: '300px' }}>{mapError}</div>
+        </div>
+      )}
+    </div>
   );
 }
