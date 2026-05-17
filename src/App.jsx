@@ -1,22 +1,22 @@
 import { useState, useCallback } from 'react';
 import Map from './components/Map.jsx';
+import Sidebar from './components/Sidebar.jsx';
 import Scanner from './components/Scanner.jsx';
-import Cellar from './components/Cellar.jsx';
-import BottleCard from './components/BottleCard.jsx';
-import ApiKeyModal from './components/ApiKeyModal.jsx';
+import BottleModal from './components/BottleModal.jsx';
+import RegionPanel from './components/RegionPanel.jsx';
 import { useCollection } from './hooks/useCollection.js';
-import { getRegion } from './data/regions.js';
+import { useMapRegions } from './hooks/useMapRegions.js';
 
 export default function App() {
   const { collection, addBottle, removeBottle } = useCollection();
+  const { selectedRegion, pulsingRegion, regionData, selectRegion, clearRegion, matchAndSelect } = useMapRegions();
 
-  const [selectedRegion, setSelectedRegion] = useState(null);
-  const [sidebarOpen,    setSidebarOpen]    = useState(true);
-  const [scanning,       setScanning]       = useState(false);
-  const [showApiModal,   setShowApiModal]   = useState(false);
-  const [pendingBottle,  setPendingBottle]  = useState(null); // scan result awaiting confirm
-  const [pulsingRegion,  setPulsingRegion]  = useState(null);
-  const [filter,         setFilter]         = useState({ country: '', region: '', year: '' });
+  const [scanning, setScanning]               = useState(false);
+  const [pendingBottle, setPendingBottle]      = useState(null);
+  const [sidebarOpen, setSidebarOpen]          = useState(true);
+  const [apiKeyVisible, setApiKeyVisible]      = useState(false);
+  const [apiKeyInput, setApiKeyInput]          = useState(localStorage.getItem('terroir_api_key') ?? '');
+  const [filter, setFilter]                    = useState({ search: '' });
 
   const handleScanResult = useCallback((data) => {
     setScanning(false);
@@ -26,156 +26,161 @@ export default function App() {
   const handleConfirm = useCallback((bottle) => {
     addBottle(bottle);
     setPendingBottle(null);
-    // Pulse the region and auto-select
-    if (bottle.region) {
-      setPulsingRegion(bottle.region);
-      setSelectedRegion(bottle.region);
-      setTimeout(() => setPulsingRegion(null), 2500);
-    }
-  }, [addBottle]);
+    matchAndSelect(bottle.region, bottle.country);
+  }, [addBottle, matchAndSelect]);
 
   const handleSelectBottle = useCallback((bottle) => {
-    setSelectedRegion(bottle.region || null);
-  }, []);
+    if (bottle.region) selectRegion(bottle.region);
+  }, [selectRegion]);
 
-  const selectedRegionData = selectedRegion ? getRegion(selectedRegion) : null;
-  const regionBottles = selectedRegion ? collection.filter(b => b.region === selectedRegion) : [];
+  const regionBottles = selectedRegion
+    ? collection.filter(b => b.region === selectedRegion)
+    : [];
+
+  const saveApiKey = () => {
+    localStorage.setItem('terroir_api_key', apiKeyInput);
+    setApiKeyVisible(false);
+  };
 
   return (
-    <div className="h-screen flex flex-col bg-wine-bg overflow-hidden text-wine-cream">
+    <div style={{
+      width: '100vw',
+      height: '100vh',
+      overflow: 'hidden',
+      background: '#1C0A00',
+      position: 'relative',
+    }}>
 
-      {/* ── Top bar ────────────────────────────────────────────────── */}
-      <header className="shrink-0 flex items-center justify-between px-4 py-2.5 bg-wine-card border-b border-wine-border z-10">
-        <div className="flex items-center gap-3">
-          <span className="text-xl">🍷</span>
-          <div>
-            <h1 className="font-display font-bold text-base leading-none text-wine-cream">Wijnkelder</h1>
-            <p className="font-mono text-[8px] uppercase tracking-widest text-wine-light/40">
-              {collection.length} {collection.length === 1 ? 'fles' : 'flessen'} · West-Europa
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button onClick={() => setScanning(true)} className="wine-btn">
-            <span>📷</span>
-            <span className="hidden sm:inline">Scan fles</span>
-          </button>
-          <button
-            onClick={() => setShowApiModal(true)}
-            className="wine-btn-ghost px-2.5 py-2 text-base"
-            title="API-sleutel instellen"
-          >
-            ⚙
-          </button>
-        </div>
-      </header>
-
-      {/* ── Main layout ─────────────────────────────────────────────── */}
-      <div className="flex flex-1 min-h-0">
-
-        {/* Sidebar */}
-        <Cellar
+      {/* Full-screen map */}
+      <div style={{ position: 'absolute', inset: 0 }}>
+        <Map
           collection={collection}
-          open={sidebarOpen}
-          onToggle={() => setSidebarOpen(v => !v)}
           selectedRegion={selectedRegion}
-          onSelectBottle={handleSelectBottle}
-          onDeleteBottle={removeBottle}
-          filter={filter}
-          onFilterChange={setFilter}
+          onRegionSelect={(id) => id ? selectRegion(id) : clearRegion()}
+          pulsingRegion={pulsingRegion}
         />
-
-        {/* Map */}
-        <main className="flex-1 relative min-w-0">
-          <Map
-            collection={collection}
-            selectedRegion={selectedRegion}
-            onRegionSelect={setSelectedRegion}
-            pulsingRegion={pulsingRegion}
-          />
-
-          {/* Region detail overlay */}
-          {selectedRegionData && (
-            <div className="absolute bottom-14 right-4 w-64 z-10">
-              <div className="bg-wine-panel/95 backdrop-blur-sm border border-wine-border rounded-sm shadow-2xl overflow-hidden">
-                <div className="px-4 py-3 border-b border-wine-border" style={{ background: '#722F3715' }}>
-                  <div className="font-mono text-[8px] uppercase tracking-widest text-wine-light/40">
-                    {selectedRegionData.country}
-                  </div>
-                  <h3 className="font-display font-bold text-wine-cream text-base leading-tight">
-                    {selectedRegionData.name}
-                  </h3>
-                  <p className="font-body text-xs text-wine-light/60 italic mt-0.5 line-clamp-2">
-                    {selectedRegionData.description}
-                  </p>
-                </div>
-
-                {/* Sub-regions */}
-                {selectedRegionData.subregions?.length > 0 && (
-                  <div className="px-4 py-2 border-b border-wine-border">
-                    <div className="font-mono text-[8px] uppercase tracking-widest text-wine-light/40 mb-1.5">Sub-regio's</div>
-                    <div className="flex flex-wrap gap-1">
-                      {selectedRegionData.subregions.map(s => (
-                        <span key={s} className="font-mono text-[8px] bg-wine-card border border-wine-border rounded-sm px-1.5 py-0.5 text-wine-light/70">
-                          {s}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Bottles */}
-                <div className="px-4 py-3">
-                  <div className="font-mono text-[8px] uppercase tracking-widest text-wine-light/40 mb-2">
-                    Mijn flessen · {regionBottles.length}
-                  </div>
-                  {regionBottles.length === 0 ? (
-                    <p className="text-xs text-wine-light/30 font-body italic">Nog geen flessen.</p>
-                  ) : (
-                    <div className="space-y-1.5 max-h-28 overflow-y-auto">
-                      {regionBottles.map(b => (
-                        <div key={b.id} className="flex items-center gap-2">
-                          {b.thumbnail && (
-                            <img src={b.thumbnail} alt="" className="w-6 h-8 object-cover rounded-sm border border-wine-border shrink-0" />
-                          )}
-                          <div className="min-w-0">
-                            <div className="font-display text-xs font-semibold text-wine-cream truncate">{b.name || b.producer}</div>
-                            {b.vintage && <div className="font-mono text-[9px] text-wine-gold">{b.vintage}</div>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="flex gap-2 mt-3">
-                    <button onClick={() => setScanning(true)} className="wine-btn text-xs py-1.5 flex-1 justify-center">
-                      + Fles
-                    </button>
-                    <button onClick={() => setSelectedRegion(null)} className="wine-btn-ghost text-xs py-1.5 px-3">
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </main>
       </div>
 
-      {/* ── Modals ─────────────────────────────────────────────────── */}
-      {scanning && (
-        <Scanner onResult={handleScanResult} onClose={() => setScanning(false)} />
+      {/* Sidebar overlay */}
+      <Sidebar
+        collection={collection}
+        open={sidebarOpen}
+        onToggle={() => setSidebarOpen(v => !v)}
+        selectedRegion={selectedRegion}
+        regionData={regionData}
+        onSelectBottle={handleSelectBottle}
+        onDeleteBottle={removeBottle}
+        onAddToRegion={clearRegion}
+        filter={filter}
+        onFilterChange={setFilter}
+      />
+
+      {/* Top-right controls */}
+      <div style={{
+        position: 'absolute',
+        top: '16px',
+        right: '16px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px',
+        zIndex: 30,
+      }}>
+        {/* Scan button */}
+        <button
+          className="terroir-btn"
+          onClick={() => setScanning(true)}
+          style={{ gap: '6px' }}
+        >
+          <span>📷</span>
+          <span>Scan fles</span>
+        </button>
+
+        {/* Settings button */}
+        <button
+          className="terroir-btn-ghost"
+          onClick={() => setApiKeyVisible(v => !v)}
+          style={{ justifyContent: 'center' }}
+          title="API-sleutel instellen"
+        >
+          ⚙
+        </button>
+      </div>
+
+      {/* API Key input panel */}
+      {apiKeyVisible && (
+        <div style={{
+          position: 'absolute',
+          top: '110px',
+          right: '16px',
+          width: '280px',
+          background: 'rgba(28,10,0,0.97)',
+          border: '1px solid #5A2800',
+          borderRadius: '10px',
+          padding: '14px',
+          zIndex: 30,
+          boxShadow: '0 8px 30px rgba(0,0,0,0.6)',
+        }}>
+          <div style={{
+            fontFamily: 'Inter, sans-serif',
+            fontSize: '9px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.22em',
+            color: 'rgba(200,180,154,0.5)',
+            marginBottom: '8px',
+          }}>Claude API-sleutel</div>
+          <input
+            className="terroir-input"
+            type="password"
+            placeholder="sk-ant-…"
+            value={apiKeyInput}
+            onChange={e => setApiKeyInput(e.target.value)}
+            style={{ marginBottom: '10px' }}
+          />
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              className="terroir-btn-ghost"
+              style={{ flex: 1, justifyContent: 'center' }}
+              onClick={() => setApiKeyVisible(false)}
+            >
+              Annuleren
+            </button>
+            <button
+              className="terroir-btn"
+              style={{ flex: 2, justifyContent: 'center' }}
+              onClick={saveApiKey}
+            >
+              Opslaan
+            </button>
+          </div>
+        </div>
       )}
 
+      {/* Region panel */}
+      {selectedRegion && regionData && (
+        <RegionPanel
+          regionData={regionData}
+          bottles={regionBottles}
+          onClose={clearRegion}
+          onScan={() => setScanning(true)}
+        />
+      )}
+
+      {/* Scanner modal */}
+      {scanning && (
+        <Scanner
+          onResult={handleScanResult}
+          onClose={() => setScanning(false)}
+        />
+      )}
+
+      {/* Bottle confirmation modal */}
       {pendingBottle && (
-        <BottleCard
+        <BottleModal
           scanData={pendingBottle}
           onConfirm={handleConfirm}
           onCancel={() => setPendingBottle(null)}
         />
       )}
-
-      {showApiModal && <ApiKeyModal onClose={() => setShowApiModal(false)} />}
     </div>
   );
 }

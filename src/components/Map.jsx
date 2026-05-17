@@ -1,13 +1,13 @@
 import { useEffect, useRef, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { REGIONS_GEOJSON } from '../data/regions.js';
+import { REGIONS_GEOJSON } from '../data/wineRegions.js';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN ?? '';
 
 const SOURCE = 'wine-regions';
 
-// Build a GeoJSON FeatureCollection with bottle_count injected into each feature
+// Build a GeoJSON FeatureCollection with bottle_count and is_pulsing injected
 function buildGeoJSON(collection, pulsingId) {
   const counts = {};
   collection.forEach(b => {
@@ -20,45 +20,44 @@ function buildGeoJSON(collection, pulsingId) {
       properties: {
         ...f.properties,
         bottle_count: counts[f.properties.id] ?? 0,
-        is_pulsing:   f.properties.id === pulsingId ? 1 : 0,
+        is_pulsing: f.properties.id === pulsingId ? 1 : 0,
       },
     })),
   };
 }
 
-// Color expression: 0 → neutral, 1 → light, 3+ → deep red
+// Fill color based on bottle count using step expression
 const fillColorExpr = [
-  'interpolate', ['linear'], ['get', 'bottle_count'],
-  0, '#c8b8a2',
-  1, '#9B4A5A',
-  3, '#722F37',
+  'step', ['get', 'bottle_count'],
+  '#e8ddd0',    // 0 bottles
+  1, '#c49a8a', // 1-2
+  3, '#8B3A3A', // 3-5
+  6, '#5C1A1A', // 6+
 ];
 
 export default function Map({ collection, selectedRegion, onRegionSelect, pulsingRegion }) {
-  const containerRef = useRef(null);
-  const mapRef       = useRef(null);
-  const popupRef     = useRef(null);
+  const containerRef  = useRef(null);
+  const mapRef        = useRef(null);
+  const popupRef      = useRef(null);
+  const hoveredIdRef  = useRef(null);
 
-  // Sync source data whenever collection or pulse changes
+  // Keep a ref of selectedRegion so click handlers are never stale
+  const selectedRegionRef = useRef(selectedRegion);
+  useEffect(() => { selectedRegionRef.current = selectedRegion; }, [selectedRegion]);
+
+  // Sync source data whenever collection or pulsingRegion changes
   const syncSource = useCallback(() => {
     const map = mapRef.current;
     if (!map?.getSource(SOURCE)) return;
     map.getSource(SOURCE).setData(buildGeoJSON(collection, pulsingRegion));
   }, [collection, pulsingRegion]);
 
-  // Paint selected region outline
+  // Sync outline line-width when selectedRegion changes
   const syncSelection = useCallback(() => {
     const map = mapRef.current;
     if (!map?.getLayer('regions-outline')) return;
-    const sel = selectedRegion ?? '__none__';
-    map.setPaintProperty('regions-outline', 'line-color', [
-      'case', ['==', ['get', 'id'], sel], '#f0e8d8', '#6B4040',
-    ]);
     map.setPaintProperty('regions-outline', 'line-width', [
-      'case', ['==', ['get', 'id'], sel], 2.5, 0.8,
-    ]);
-    map.setPaintProperty('regions-fill', 'fill-opacity', [
-      'case', ['==', ['get', 'id'], sel], 0.88, 0.62,
+      'case', ['==', ['get', 'id'], selectedRegion ?? '__none__'], 2.5, 0.8,
     ]);
   }, [selectedRegion]);
 
@@ -68,11 +67,12 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
 
     const map = new mapboxgl.Map({
       container: containerRef.current,
-      style: 'mapbox://styles/mapbox/dark-v11',
-      center: [5, 46],
-      zoom: 4,
-      minZoom: 3,
+      style: 'mapbox://styles/mapbox/light-v11',
+      center: [2.5, 46.5],
+      zoom: 4.5,
+      minZoom: 3.5,
       maxZoom: 10,
+      maxBounds: [[-12, 34], [22, 58]],
     });
 
     mapRef.current = map;
@@ -83,35 +83,35 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
     });
 
     map.on('load', () => {
-      // Source
+      // Add source
       map.addSource(SOURCE, {
         type: 'geojson',
         data: buildGeoJSON([], null),
       });
 
-      // Fill
+      // Fill layer
       map.addLayer({
         id: 'regions-fill',
         type: 'fill',
         source: SOURCE,
         paint: {
           'fill-color': fillColorExpr,
-          'fill-opacity': 0.62,
+          'fill-opacity': ['case', ['==', ['get', 'is_hovered'], 1], 0.95, 0.75],
         },
       });
 
-      // Outline
+      // Outline layer
       map.addLayer({
         id: 'regions-outline',
         type: 'line',
         source: SOURCE,
         paint: {
-          'line-color': '#6B4040',
+          'line-color': '#ffffff',
           'line-width': 0.8,
         },
       });
 
-      // Labels
+      // Label layer
       map.addLayer({
         id: 'regions-labels',
         type: 'symbol',
@@ -119,51 +119,68 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
         layout: {
           'text-field': ['get', 'name'],
           'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
-          'text-size': ['interpolate', ['linear'], ['zoom'], 4, 9, 7, 13],
+          'text-size': 11,
           'text-anchor': 'center',
           'text-allow-overlap': false,
         },
         paint: {
-          'text-color': '#f0e8d8',
-          'text-halo-color': '#1a0a0a',
+          'text-color': '#2C1A00',
+          'text-halo-color': '#ffffff',
           'text-halo-width': 1.5,
           'text-opacity': ['interpolate', ['linear'], ['zoom'], 3.5, 0, 4.5, 1],
         },
       });
 
-      // Hover popup
+      // Hover: mousemove over fill
       map.on('mousemove', 'regions-fill', (e) => {
         map.getCanvas().style.cursor = 'pointer';
-        const p = e.features[0].properties;
+        const feature = e.features[0];
+        const p = feature.properties;
+
+        // Update feature state for is_hovered
+        if (hoveredIdRef.current !== null && hoveredIdRef.current !== feature.id) {
+          map.setFeatureState(
+            { source: SOURCE, id: hoveredIdRef.current },
+            { is_hovered: 0 }
+          );
+        }
+        hoveredIdRef.current = feature.id;
+        map.setFeatureState(
+          { source: SOURCE, id: feature.id },
+          { is_hovered: 1 }
+        );
+
         popupRef.current
           .setLngLat(e.lngLat)
           .setHTML(
-            `<div style="
-              background:#2a1010;border:1px solid #4a2a2a;border-radius:3px;
-              padding:8px 12px;font-family:'Playfair Display',serif;
-            ">
-              <div style="color:#f0e8d8;font-size:13px;font-weight:600">${p.name}</div>
-              <div style="color:#c8b8a2;font-size:10px;margin-top:2px;font-family:monospace">
-                ${p.country} · ${p.bottle_count} fles${p.bottle_count !== 1 ? 'sen' : ''}
-              </div>
+            `<div style="background:#1C0A00;border:1px solid #5A2800;border-radius:8px;padding:8px 12px;color:#F5EDD8">
+              <div style="font-size:13px;font-weight:600;font-family:'Playfair Display',serif">${p.name}</div>
+              <div style="color:#D4A96A;font-size:10px;margin-top:2px;font-family:Inter,sans-serif">${p.country} · ${p.bottle_count} fles${p.bottle_count !== 1 ? 'sen' : ''}</div>
             </div>`
           )
           .addTo(map);
       });
 
+      // Hover: mouseleave
       map.on('mouseleave', 'regions-fill', () => {
         map.getCanvas().style.cursor = '';
         popupRef.current.remove();
+        if (hoveredIdRef.current !== null) {
+          map.setFeatureState(
+            { source: SOURCE, id: hoveredIdRef.current },
+            { is_hovered: 0 }
+          );
+          hoveredIdRef.current = null;
+        }
       });
 
-      // Click: select + zoom
+      // Click: select region and fly to bounds
       map.on('click', 'regions-fill', (e) => {
         const id = e.features[0].properties.id;
         const newSel = id === selectedRegionRef.current ? null : id;
         onRegionSelect(newSel);
 
         if (newSel) {
-          // Fit to region bounds
           const coords = e.features[0].geometry.coordinates[0];
           const bounds = coords.reduce(
             (b, c) => b.extend(c),
@@ -173,13 +190,13 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
         }
       });
 
-      // Double-click to reset
+      // Double-click on map (outside region click): reset
       map.on('dblclick', () => {
         onRegionSelect(null);
-        map.flyTo({ center: [5, 46], zoom: 4, duration: 700 });
+        map.flyTo({ center: [2.5, 46.5], zoom: 4.5, duration: 700 });
       });
 
-      // Initial data
+      // Load initial data and selection state
       syncSource();
       syncSelection();
     });
@@ -191,35 +208,10 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Keep a ref of selectedRegion for the click handler (avoids stale closure)
-  const selectedRegionRef = useRef(selectedRegion);
-  useEffect(() => { selectedRegionRef.current = selectedRegion; }, [selectedRegion]);
-
-  useEffect(() => { syncSource(); },    [syncSource]);
+  useEffect(() => { syncSource(); }, [syncSource]);
   useEffect(() => { syncSelection(); }, [syncSelection]);
 
   return (
-    <div className="relative w-full h-full">
-      <div ref={containerRef} className="w-full h-full" />
-
-      {/* Legend */}
-      <div className="absolute bottom-6 right-4 bg-wine-panel/90 backdrop-blur-sm panel-border rounded-sm px-3 py-2 text-xs">
-        <div className="font-mono text-[9px] uppercase tracking-widest text-wine-light/60 mb-1.5">Kelder dichtheid</div>
-        <div className="flex items-center gap-1.5">
-          {['#c8b8a2','#B06080','#9B4A5A','#722F37'].map((c, i) => (
-            <div key={i} style={{ background: c }} className="w-5 h-3 rounded-sm" />
-          ))}
-        </div>
-        <div className="flex justify-between mt-0.5">
-          <span className="font-mono text-[8px] text-wine-light/40">0</span>
-          <span className="font-mono text-[8px] text-wine-light/40">3+</span>
-        </div>
-      </div>
-
-      {/* Zoom reset hint */}
-      <div className="absolute top-3 right-3 font-mono text-[9px] text-wine-light/40 bg-wine-panel/70 px-2 py-1 rounded-sm">
-        Dubbelklik → reset
-      </div>
-    </div>
+    <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
   );
 }
