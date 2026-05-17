@@ -8,7 +8,9 @@
     "preview": "vite preview",
     "setup": "node scripts/downloadINAO.js && node scripts/uploadTileset.js",
     "setup:download": "node scripts/downloadINAO.js",
-    "setup:upload": "node scripts/uploadTileset.js"
+    "setup:upload": "node scripts/uploadTileset.js",
+    "download-data": "node scripts/downloadData.js",
+    "process-data": "node scripts/processData.js"
   },
   "dependencies": {
     "mapbox-gl": "^3.5.2",

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import Map from './components/Map.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import Scanner from './components/Scanner.jsx';
@@ -10,6 +10,8 @@ import { useMapRegions } from './hooks/useMapRegions.js';
 export default function App() {
   const { collection, addBottle, removeBottle } = useCollection();
   const { selectedRegion, pulsingRegion, regionData, selectRegion, clearRegion, pulseRegion, matchAndSelect } = useMapRegions();
+
+  const mapActionsRef = useRef(null);
 
   const [scanning, setScanning]               = useState(false);
   const [pendingBottle, setPendingBottle]      = useState(null);
@@ -26,7 +28,9 @@ export default function App() {
   const handleConfirm = useCallback((bottle) => {
     addBottle(bottle);
     setPendingBottle(null);
-    if (bottle.region) {
+    if (bottle.italyAppellation) {
+      mapActionsRef.current?.flyToItalianAppellation(bottle.italyAppellation);
+    } else if (bottle.region) {
       selectRegion(bottle.region);
       pulseRegion(bottle.region);
     }
@@ -61,6 +65,7 @@ export default function App() {
           selectedRegion={selectedRegion}
           onRegionSelect={(id) => id ? selectRegion(id) : clearRegion()}
           pulsingRegion={pulsingRegion}
+          mapActionsRef={mapActionsRef}
         />
       </div>
 
@@ -96,6 +101,17 @@ export default function App() {
         >
           <span>📷</span>
           <span>Scan fles</span>
+        </button>
+
+        {/* Demo: Barolo */}
+        <button
+          className="terroir-btn-ghost"
+          onClick={() => mapActionsRef.current?.flyToItalianAppellation('Barolo')}
+          style={{ gap: '6px' }}
+          title="Zoom naar Barolo"
+        >
+          <span>🍷</span>
+          <span>Demo: Barolo</span>
         </button>
 
         {/* Settings button */}

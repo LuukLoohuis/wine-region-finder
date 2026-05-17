@@ -10,6 +10,8 @@ const BASSINS = 'france-bassins';
 const OWNED   = 'owned-regions';
 const AOC_SRC = 'aoc-appellations';
 const AOC_TILESET = import.meta.env.VITE_APPELLATION_TILESET ?? 'luuk-loohuis.france-wine-aop';
+const ITALY_SRC    = 'italy-wine-municipalities';
+const ITALY_BOUNDS = { west: 6.6, east: 18.5, south: 36.6, north: 47.1 };
 const ZOOM_XOVER = 6.0; // zoom where regions → bassins crossover
 const ZOOM_AOC   = 8.0; // zoom where bassins → AOC appellations
 
@@ -111,11 +113,13 @@ const LEGEND_ITEMS = [
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function Map({ collection, selectedRegion, onRegionSelect, pulsingRegion }) {
+export default function Map({ collection, selectedRegion, onRegionSelect, pulsingRegion, mapActionsRef }) {
   const containerRef = useRef(null);
   const mapRef       = useRef(null);
   const popupRef     = useRef(null);
   const hoveredRef   = useRef({ source: null, id: null });
+  const italyLoadedRef       = useRef(false);
+  const appellationBoundsRef = useRef({});
 
   const [mapError,   setMapError]   = useState(null);
   const [zoomLabel,  setZoomLabel]  = useState("Regio's");
@@ -445,6 +449,133 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
       };
       map.on('zoom', trackZoom);
       trackZoom();
+
+      // ── Italy wine zones (lazy loading) ───────────────────────────────────
+
+      function isItalyInView() {
+        const b = map.getBounds();
+        return b.getEast() > ITALY_BOUNDS.west && b.getWest() < ITALY_BOUNDS.east
+            && b.getNorth() > ITALY_BOUNDS.south && b.getSouth() < ITALY_BOUNDS.north;
+      }
+
+      async function loadItalyWineData() {
+        if (italyLoadedRef.current) return;
+        italyLoadedRef.current = true;
+
+        let data;
+        try {
+          const res = await fetch('/data/italy-wine-municipalities.geojson');
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          data = await res.json();
+        } catch (err) {
+          console.warn('Italy wine data not available:', err.message);
+          italyLoadedRef.current = false;
+          return;
+        }
+
+        // Build appellation → LngLatBounds lookup for flyTo
+        for (const feature of data.features ?? []) {
+          const app = feature.properties?.wine_appellation;
+          if (!app) continue;
+          if (!appellationBoundsRef.current[app]) appellationBoundsRef.current[app] = new mapboxgl.LngLatBounds();
+          const geom = feature.geometry;
+          const rings = geom?.type === 'Polygon'
+            ? [geom.coordinates[0]]
+            : (geom?.coordinates ?? []).map(p => p[0]);
+          rings.forEach(ring => ring?.forEach(c => appellationBoundsRef.current[app].extend(c)));
+        }
+
+        if (map.getSource(ITALY_SRC)) return; // race guard
+        map.addSource(ITALY_SRC, { type: 'geojson', data, generateId: true });
+
+        map.addLayer({
+          id: 'italy-wine-zones', type: 'fill', source: ITALY_SRC,
+          paint: {
+            'fill-color': ['get', 'wine_color'],
+            'fill-opacity': ['case', ['boolean', ['feature-state', 'hovered'], false], 0.85, 0.65],
+          },
+        });
+
+        map.addLayer({
+          id: 'italy-wine-borders', type: 'line', source: ITALY_SRC,
+          paint: {
+            'line-color': '#ffffff',
+            'line-width': ['interpolate', ['linear'], ['zoom'], 6, 0.3, 12, 1.5],
+            'line-opacity': 0.7,
+          },
+        });
+
+        map.addLayer({
+          id: 'italy-wine-labels', type: 'symbol', source: ITALY_SRC,
+          minzoom: 9,
+          layout: {
+            'text-field': ['get', 'wine_appellation'],
+            'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+            'text-size': ['interpolate', ['linear'], ['zoom'], 9, 9, 12, 13],
+            'text-anchor': 'center', 'text-allow-overlap': false, 'text-max-width': 8,
+          },
+          paint: {
+            'text-color': '#1C0A00', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5,
+            'text-opacity': ['interpolate', ['linear'], ['zoom'], 9, 0, 10, 1],
+          },
+        });
+
+        // Italy hover
+        const italyHover = { id: null };
+        map.on('mousemove', 'italy-wine-zones', (e) => {
+          const feat = e.features?.[0];
+          if (!feat) return;
+          if (italyHover.id != null) map.setFeatureState({ source: ITALY_SRC, id: italyHover.id }, { hovered: false });
+          italyHover.id = feat.id;
+          map.setFeatureState({ source: ITALY_SRC, id: feat.id }, { hovered: true });
+          map.getCanvas().style.cursor = 'pointer';
+          const p = feat.properties;
+          popupRef.current
+            .setLngLat(e.lngLat)
+            .setHTML(`<div style="background:#1C0A00;border:1px solid #5A2800;border-radius:8px;padding:8px 12px;color:#F5EDD8">
+              <div style="font-size:13px;font-weight:600;font-family:'Playfair Display',serif">${p.wine_appellation ?? '?'}</div>
+              <div style="color:#D4A96A;font-size:10px;margin-top:2px;font-family:Inter,sans-serif">${p.wine_classification ?? ''} · ${p.wine_region ?? ''}</div>
+              ${p.wine_grapes ? `<div style="color:rgba(212,169,106,0.7);font-size:9px;margin-top:2px;font-family:Inter,sans-serif">${p.wine_grapes}</div>` : ''}
+            </div>`)
+            .addTo(map);
+        });
+        map.on('mouseleave', 'italy-wine-zones', () => {
+          if (italyHover.id != null) map.setFeatureState({ source: ITALY_SRC, id: italyHover.id }, { hovered: false });
+          italyHover.id = null;
+          map.getCanvas().style.cursor = '';
+          popupRef.current.remove();
+        });
+
+        // Italy click — zoom to appellation bounds
+        map.on('click', 'italy-wine-zones', (e) => {
+          const feat = e.features?.[0];
+          if (!feat) return;
+          const app = feat.properties?.wine_appellation;
+          const b = appellationBoundsRef.current[app];
+          if (b && !b.isEmpty()) map.fitBounds(b, { padding: 60, duration: 900, maxZoom: 12 });
+        });
+      }
+
+      // Wire up external flyToItalianAppellation action
+      if (mapActionsRef) {
+        mapActionsRef.current = {
+          flyToItalianAppellation: async (name) => {
+            const m = mapRef.current;
+            if (!m) return;
+            if (!italyLoadedRef.current) {
+              m.flyTo({ center: [12.0, 43.5], zoom: 5.5, duration: 800 });
+              await new Promise(r => m.once('moveend', r));
+              await loadItalyWineData();
+              await new Promise(r => setTimeout(r, 300));
+            }
+            const b = appellationBoundsRef.current[name];
+            if (b && !b.isEmpty()) m.fitBounds(b, { padding: 80, duration: 1200, maxZoom: 12 });
+          },
+        };
+      }
+
+      map.on('moveend', () => { if (isItalyInView()) loadItalyWineData(); });
+      if (isItalyInView()) loadItalyWineData();
 
       syncSource();
       syncSelection();

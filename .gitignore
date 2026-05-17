@@ -6,3 +6,5 @@ dist
 public/data/france-aop.geojson
 public/data/france-aop-simplified.geojson
 public/data/_inao_shp/
+public/data/italy-municipalities.geojson
+public/data/italy-wine-municipalities.geojson
