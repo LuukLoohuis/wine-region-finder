@@ -346,17 +346,67 @@ export function getRegion(id) {
   return REGIONS_GEOJSON.features.find(f => f.properties.id === id)?.properties ?? null;
 }
 
+const ALIASES = {
+  burgundy: 'bourgogne', bourgogne: 'bourgogne',
+  tuscany: 'toscane', toscana: 'toscane', toscane: 'toscane',
+  piedmont: 'piemonte', piemonte: 'piemonte',
+  veneto: 'veneto',
+  sicily: 'sicilie', sicilia: 'sicilie', sicilie: 'sicilie',
+  puglia: 'puglia', apulia: 'puglia',
+  bordeaux: 'bordeaux',
+  champagne: 'champagne',
+  alsace: 'alsace',
+  loire: 'loire',
+  rhone: 'rhone', rhône: 'rhone',
+  provence: 'provence',
+  languedoc: 'languedoc',
+  rioja: 'rioja',
+  ribera: 'ribera', 'ribera del duero': 'ribera',
+  priorat: 'priorat', priorato: 'priorat',
+  'rías baixas': 'rias-baixas', 'rias baixas': 'rias-baixas', galicia: 'rias-baixas',
+  jerez: 'jerez', sherry: 'jerez',
+  mosel: 'mosel', moselle: 'mosel',
+  rheingau: 'rheingau',
+  pfalz: 'pfalz', palatinate: 'pfalz',
+  baden: 'baden',
+  douro: 'douro', porto: 'douro', port: 'douro',
+  alentejo: 'alentejo',
+  'vinho verde': 'vinho-verde',
+  dao: 'dao', dão: 'dao',
+  'sud-ouest': 'sud-ouest', 'south west': 'sud-ouest',
+};
+
+const COUNTRY_MAP = {
+  france: 'fr', french: 'fr', frankreich: 'fr',
+  italy: 'it', italian: 'it', italia: 'it',
+  spain: 'es', spanish: 'es', españa: 'es',
+  germany: 'de', german: 'de', deutschland: 'de',
+  portugal: 'pt', portuguese: 'pt',
+};
+
 export function matchRegion(regionStr, country) {
   if (!regionStr) return '';
-  const norm = regionStr.toLowerCase();
+  const norm = regionStr.toLowerCase().trim();
+
+  // Direct alias lookup first
+  for (const [alias, id] of Object.entries(ALIASES)) {
+    if (norm === alias || norm.includes(alias)) return id;
+  }
+
+  const countryCode = country
+    ? (COUNTRY_MAP[country.toLowerCase()] ?? country.toLowerCase().slice(0, 2))
+    : null;
+
   let best = null, bestScore = 0;
   for (const f of REGIONS_GEOJSON.features) {
     const p = f.properties;
+    const pName = p.name.toLowerCase();
     let score = 0;
-    if (norm.includes(p.name.toLowerCase())) score += 10;
-    if (p.name.toLowerCase().includes(norm)) score += 6;
-    if (p.id.includes(norm.split(' ')[0])) score += 4;
-    if (country && p.country.toLowerCase() === country.toLowerCase().slice(0, 2)) score += 2;
+    if (norm === p.id) score += 20;
+    if (norm.includes(pName)) score += 10;
+    if (pName.includes(norm)) score += 6;
+    if (p.id.includes(norm.split(' ')[0])) score += 3;
+    if (countryCode && p.country.toLowerCase() === countryCode) score += 2;
     if (score > bestScore) { bestScore = score; best = p.id; }
   }
   return bestScore > 0 ? best : '';

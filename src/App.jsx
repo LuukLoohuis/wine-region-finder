@@ -9,7 +9,7 @@ import { useMapRegions } from './hooks/useMapRegions.js';
 
 export default function App() {
   const { collection, addBottle, removeBottle } = useCollection();
-  const { selectedRegion, pulsingRegion, regionData, selectRegion, clearRegion, matchAndSelect } = useMapRegions();
+  const { selectedRegion, pulsingRegion, regionData, selectRegion, clearRegion, pulseRegion, matchAndSelect } = useMapRegions();
 
   const [scanning, setScanning]               = useState(false);
   const [pendingBottle, setPendingBottle]      = useState(null);
@@ -26,8 +26,11 @@ export default function App() {
   const handleConfirm = useCallback((bottle) => {
     addBottle(bottle);
     setPendingBottle(null);
-    matchAndSelect(bottle.region, bottle.country);
-  }, [addBottle, matchAndSelect]);
+    if (bottle.region) {
+      selectRegion(bottle.region);
+      pulseRegion(bottle.region);
+    }
+  }, [addBottle, selectRegion, pulseRegion]);
 
   const handleSelectBottle = useCallback((bottle) => {
     if (bottle.region) selectRegion(bottle.region);

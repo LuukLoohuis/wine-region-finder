@@ -88,6 +88,25 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
     });
 
     map.on('load', () => {
+      // Hillshading for terrain detail
+      map.addSource('dem', {
+        type: 'raster-dem',
+        url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
+        tileSize: 512,
+      });
+      map.addLayer({
+        id: 'hillshading',
+        type: 'hillshade',
+        source: 'dem',
+        paint: {
+          'hillshade-shadow-color': '#8B6040',
+          'hillshade-highlight-color': '#ffffff',
+          'hillshade-accent-color': '#A07050',
+          'hillshade-exaggeration': 0.35,
+          'hillshade-illumination-anchor': 'viewport',
+        },
+      });
+
       map.addSource(SOURCE, {
         type: 'geojson',
         data: buildGeoJSON([], null),
