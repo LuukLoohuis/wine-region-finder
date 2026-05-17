@@ -8,7 +8,10 @@ mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN ?? '';
 const SOURCE  = 'wine-regions';
 const BASSINS = 'france-bassins';
 const OWNED   = 'owned-regions';
+const AOC_SRC = 'aoc-appellations';
+const AOC_TILESET = import.meta.env.VITE_APPELLATION_TILESET ?? 'luuk-loohuis.france-wine-aop';
 const ZOOM_XOVER = 6.0; // zoom where regions → bassins crossover
+const ZOOM_AOC   = 8.0; // zoom where bassins → AOC appellations
 
 // ─── Data helpers ────────────────────────────────────────────────────────────
 
@@ -165,7 +168,15 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
     mapRef.current = map;
     popupRef.current = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
 
-    map.on('error', e => setMapError(e.error?.message ?? String(e)));
+    map.on('error', e => {
+      const msg = e.error?.message ?? String(e);
+      // Only block the map for truly fatal errors (style or token)
+      if (msg.includes('access token') || msg.includes('Failed to fetch style')) {
+        setMapError(msg);
+      } else {
+        console.warn('Mapbox error (non-fatal):', msg);
+      }
+    });
 
     map.on('load', () => {
 
@@ -180,6 +191,10 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
       map.addSource(SOURCE,  { type: 'geojson', data: buildGeoJSON([], null), generateId: true });
       map.addSource(BASSINS, { type: 'geojson', data: '/data/france-bassins.geojson', generateId: true });
       map.addSource(OWNED,   { type: 'geojson', data: buildOwnedGeoJSON([]) });
+      // AOC vector tileset — added only if env var is configured
+      if (AOC_TILESET) {
+        map.addSource(AOC_SRC, { type: 'vector', url: `mapbox://${AOC_TILESET}` });
+      }
 
       // ── Fill layers ────────────────────────────────────────────────────
 
@@ -222,6 +237,19 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
         },
       });
 
+      // AOC appellations fill (vector tileset, zoom 8+)
+      if (AOC_TILESET && map.getSource(AOC_SRC)) {
+        map.addLayer({
+          id: 'aoc-fill', type: 'fill', source: AOC_SRC,
+          'source-layer': 'France AOC Wine Regions INAO',
+          minzoom: ZOOM_AOC,
+          paint: {
+            'fill-color': '#7A2030',
+            'fill-opacity': ['interpolate', ['linear'], ['zoom'], ZOOM_AOC, 0, ZOOM_AOC + 1, 0.55],
+          },
+        });
+      }
+
       // Owned regions glow fill
       map.addLayer({
         id: 'owned-fill', type: 'fill', source: OWNED,
@@ -256,6 +284,19 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
         },
       });
 
+      if (AOC_TILESET && map.getSource(AOC_SRC)) {
+        map.addLayer({
+          id: 'aoc-outline', type: 'line', source: AOC_SRC,
+          'source-layer': 'France AOC Wine Regions INAO',
+          minzoom: ZOOM_AOC,
+          paint: {
+            'line-color': '#ffffff',
+            'line-width': ['interpolate', ['linear'], ['zoom'], ZOOM_AOC, 0.3, 13, 1.5],
+            'line-opacity': ['interpolate', ['linear'], ['zoom'], ZOOM_AOC, 0, ZOOM_AOC + 1, 0.7],
+          },
+        });
+      }
+
       map.addLayer({
         id: 'owned-outline', type: 'line', source: OWNED,
         paint: { 'line-color': '#D4A96A', 'line-width': 2.5, 'line-opacity': 0.9 },
@@ -279,7 +320,7 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
 
       map.addLayer({
         id: 'bassins-labels', type: 'symbol', source: BASSINS,
-        minzoom: ZOOM_XOVER,
+        minzoom: ZOOM_XOVER, maxzoom: ZOOM_AOC + 1,
         layout: {
           'text-field': BASSIN_LABEL_EXPR,
           'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
@@ -290,6 +331,24 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
           'text-opacity': ['interpolate', ['linear'], ['zoom'], ZOOM_XOVER, 0, ZOOM_XOVER + 0.5, 1],
         },
       });
+
+      if (AOC_TILESET && map.getSource(AOC_SRC)) {
+        map.addLayer({
+          id: 'aoc-labels', type: 'symbol', source: AOC_SRC,
+          'source-layer': 'France AOC Wine Regions INAO',
+          minzoom: ZOOM_AOC + 1,
+          layout: {
+            'text-field': ['get', 'app'],
+            'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+            'text-size': ['interpolate', ['linear'], ['zoom'], 9, 9, 12, 13],
+            'text-anchor': 'center', 'text-allow-overlap': false, 'text-max-width': 8,
+          },
+          paint: {
+            'text-color': '#2C1A00', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5,
+            'text-opacity': ['interpolate', ['linear'], ['zoom'], ZOOM_AOC + 1, 0, ZOOM_AOC + 2, 1],
+          },
+        });
+      }
 
       // ── Hover handler ──────────────────────────────────────────────────
 
@@ -334,6 +393,26 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
       map.on('mousemove', 'bassins-fill', onHover(BASSINS));
       map.on('mouseleave', 'bassins-fill', clearHover);
 
+      if (AOC_TILESET && map.getSource(AOC_SRC)) map.on('mousemove', 'aoc-fill', (e) => {
+        const feat = e.features?.[0];
+        if (!feat) return;
+        map.getCanvas().style.cursor = 'pointer';
+        const p = feat.properties;
+        const label = p.app ?? '?';
+        const sub = [p.signe, p.denom].filter(Boolean).join(' · ');
+        popupRef.current
+          .setLngLat(e.lngLat)
+          .setHTML(`<div style="background:#1C0A00;border:1px solid #5A2800;border-radius:8px;padding:8px 12px;color:#F5EDD8">
+            <div style="font-size:13px;font-weight:600;font-family:'Playfair Display',serif">${label}</div>
+            <div style="color:#D4A96A;font-size:10px;margin-top:2px;font-family:Inter,sans-serif">${sub}</div>
+          </div>`)
+          .addTo(map);
+      });
+      if (AOC_TILESET && map.getSource(AOC_SRC)) map.on('mouseleave', 'aoc-fill', () => {
+        map.getCanvas().style.cursor = '';
+        popupRef.current.remove();
+      });
+
       // ── Click handlers ─────────────────────────────────────────────────
 
       const onRegionClick = (e) => {
@@ -360,9 +439,9 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
       const trackZoom = () => {
         const z = map.getZoom();
         setInBassinZoom(z >= ZOOM_XOVER);
-        if (z < ZOOM_XOVER) setZoomLabel("Regio's");
-        else if (z < 8.5)   setZoomLabel('Appellations');
-        else                 setZoomLabel('Perceelniveau');
+        if (z < ZOOM_XOVER)  setZoomLabel("Regio's");
+        else if (z < ZOOM_AOC) setZoomLabel('Bassins');
+        else                 setZoomLabel('AOC Appellaties');
       };
       map.on('zoom', trackZoom);
       trackZoom();
