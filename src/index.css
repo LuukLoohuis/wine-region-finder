@@ -84,3 +84,21 @@
 ::-webkit-scrollbar-track { background: #1C0A00; }
 ::-webkit-scrollbar-thumb { background: #5A2800; border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: #8B3A3A; }
+
+/* Admin layer popup (province names) */
+.terroir-popup .mapboxgl-popup-content {
+  background: rgba(22, 8, 0, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 0.5px solid rgba(201, 168, 76, 0.35);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 14px;
+  font-style: italic;
+  color: #C9A84C;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+.terroir-popup .mapboxgl-popup-tip {
+  border-top-color: rgba(22, 8, 0, 0.88);
+}

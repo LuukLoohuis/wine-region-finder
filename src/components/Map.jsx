@@ -1,7 +1,10 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import bbox from '@turf/bbox';
 import { REGIONS_GEOJSON } from '../data/wineRegions.js';
+import LayerToggle from './LayerToggle.jsx';
+import { useLayerToggle } from '../hooks/useLayerToggle.js';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN ?? '';
 
@@ -12,6 +15,18 @@ const AOC_SRC = 'aoc-appellations';
 const AOC_TILESET = import.meta.env.VITE_APPELLATION_TILESET ?? 'luuk-loohuis.france-wine-aop';
 const ITALY_SRC    = 'italy-wine-municipalities';
 const ITALY_BOUNDS = { west: 6.6, east: 18.5, south: 36.6, north: 47.1 };
+const SPAIN_SRC    = 'spain-wine-dos';
+const SPAIN_BOUNDS = { west: -9.5, east: 4.5, south: 35.9, north: 43.9 };
+
+const SPAIN_TYPE_COLOR = [
+  'match', ['get', 'TIPO'],
+  'Denominación de Origen Calificada', '#8B1A1A',
+  'Denominación de Origen Protegida',  '#A83232',
+  'Denominación de Origen',            '#C0503C',
+  'Vino de Pago',                      '#7A5C20',
+  'Vino de Calidad',                   '#8C6A30',
+  '#A06040',
+];
 const ZOOM_XOVER = 6.0; // zoom where regions → bassins crossover
 const ZOOM_AOC   = 8.0; // zoom where bassins → AOC appellations
 
@@ -119,7 +134,9 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
   const popupRef     = useRef(null);
   const hoveredRef   = useRef({ source: null, id: null });
   const italyLoadedRef       = useRef(false);
+  const spainLoadedRef       = useRef(false);
   const appellationBoundsRef = useRef({});
+  const { visibility, toggle } = useLayerToggle(mapRef);
 
   const [mapError,   setMapError]   = useState(null);
   const [zoomLabel,  setZoomLabel]  = useState("Regio's");
@@ -184,12 +201,73 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
 
     map.on('load', () => {
 
+      // ── Map style overrides ────────────────────────────────────────────
+      try {
+        map.setPaintProperty('land', 'background-color', '#EDE5D0');
+        map.setPaintProperty('water', 'fill-color', '#BAD0DC');
+        map.setPaintProperty('admin-0-boundary', 'line-color', '#9E896A');
+        map.setPaintProperty('admin-0-boundary', 'line-width', 1.2);
+        map.setPaintProperty('country-label', 'text-color', '#4A3520');
+        map.setLayoutProperty('country-label', 'text-font', ['DIN Pro Italic', 'Arial Unicode MS Regular']);
+      } catch {}
+
       // ── Hillshading ────────────────────────────────────────────────────
       map.addSource('dem', { type: 'raster-dem', url: 'mapbox://mapbox.mapbox-terrain-dem-v1', tileSize: 512 });
       map.addLayer({
         id: 'hillshading', type: 'hillshade', source: 'dem',
-        paint: { 'hillshade-exaggeration': 0.35, 'hillshade-shadow-color': '#8B6040', 'hillshade-highlight-color': '#fff' },
+        paint: {
+          'hillshade-exaggeration': 0.25,
+          'hillshade-shadow-color': '#1C0A00',
+          'hillshade-highlight-color': '#F5EFE0',
+          'hillshade-illumination-direction': 335,
+          'hillshade-accent-color': '#8B7355',
+        },
       });
+
+      // ── Admin boundary sources & layers (below wine zones) ─────────────
+      map.addSource('fr-regions',  { type: 'geojson', data: '/data/france-regions.geojson' });
+      map.addSource('fr-depts',    { type: 'geojson', data: '/data/france-departments.geojson' });
+      map.addSource('it-regions',  { type: 'geojson', data: '/data/italy-regions.geojson' });
+      map.addSource('it-provinces',{ type: 'geojson', data: '/data/italy-provinces.geojson' });
+      map.addSource('es-regions',  { type: 'geojson', data: '/data/spain-regions.geojson' });
+
+      const FILL_OPACITY_EXPR = (zoom1 = 3, zoom2 = 7) => [
+        'interpolate', ['linear'], ['zoom'], zoom1, 0.20, 5, 0.14, zoom2, 0.06,
+      ];
+
+      // France
+      map.addLayer({ id: 'fr-regions-fill', type: 'fill', source: 'fr-regions',
+        paint: { 'fill-color': '#722F37', 'fill-opacity': FILL_OPACITY_EXPR() } });
+      map.addLayer({ id: 'fr-regions-line', type: 'line', source: 'fr-regions',
+        paint: { 'line-color': '#C4677A',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 3, 1.0, 6, 1.8, 9, 0.8],
+          'line-opacity': 0.65 } });
+      map.addLayer({ id: 'fr-depts-line', type: 'line', source: 'fr-depts',
+        minzoom: 5.5,
+        paint: { 'line-color': '#C4677A', 'line-width': 0.6,
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 5.5, 0.0, 6.5, 0.35],
+          'line-dasharray': [3, 3] } });
+
+      // Italy
+      map.addLayer({ id: 'it-regions-fill', type: 'fill', source: 'it-regions',
+        paint: { 'fill-color': '#4A235A', 'fill-opacity': FILL_OPACITY_EXPR() } });
+      map.addLayer({ id: 'it-regions-line', type: 'line', source: 'it-regions',
+        paint: { 'line-color': '#8B5FA0',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 3, 1.0, 6, 1.8, 9, 0.8],
+          'line-opacity': 0.65 } });
+      map.addLayer({ id: 'it-provinces-line', type: 'line', source: 'it-provinces',
+        minzoom: 5.5,
+        paint: { 'line-color': '#8B5FA0', 'line-width': 0.6,
+          'line-opacity': ['interpolate', ['linear'], ['zoom'], 5.5, 0.0, 6.5, 0.35],
+          'line-dasharray': [3, 3] } });
+
+      // Spain
+      map.addLayer({ id: 'es-regions-fill', type: 'fill', source: 'es-regions',
+        paint: { 'fill-color': '#1A3A5C', 'fill-opacity': FILL_OPACITY_EXPR() } });
+      map.addLayer({ id: 'es-regions-line', type: 'line', source: 'es-regions',
+        paint: { 'line-color': '#4A7AB5',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 3, 1.0, 6, 1.8, 9, 0.8],
+          'line-opacity': 0.65 } });
 
       // ── Sources ────────────────────────────────────────────────────────
       map.addSource(SOURCE,  { type: 'geojson', data: buildGeoJSON([], null), generateId: true });
@@ -417,6 +495,32 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
         popupRef.current.remove();
       });
 
+      // ── Admin layer hover (province tooltip) ──────────────────────────
+
+      const adminPopup = new mapboxgl.Popup({
+        closeButton: false, closeOnClick: false, offset: 12,
+        className: 'terroir-popup',
+      });
+
+      const ADMIN_HOVER_LAYERS = [
+        { id: 'fr-regions-fill', nameKey: 'nom' },
+        { id: 'it-regions-fill', nameKey: 'reg_name' },
+        { id: 'es-regions-fill', nameKey: 'shapeName' },
+      ];
+
+      ADMIN_HOVER_LAYERS.forEach(({ id, nameKey }) => {
+        map.on('mousemove', id, (e) => {
+          if (map.getLayoutProperty(id, 'visibility') === 'none') return;
+          map.getCanvas().style.cursor = 'pointer';
+          const name = e.features?.[0]?.properties?.[nameKey] ?? '';
+          adminPopup.setLngLat(e.lngLat).setHTML(`<span>${name}</span>`).addTo(map);
+        });
+        map.on('mouseleave', id, () => {
+          map.getCanvas().style.cursor = '';
+          adminPopup.remove();
+        });
+      });
+
       // ── Click handlers ─────────────────────────────────────────────────
 
       const onRegionClick = (e) => {
@@ -430,8 +534,15 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
         map.fitBounds(getFitBounds(e.features[0]), { padding: 60, duration: 900, maxZoom: 9 });
       };
 
+      const onAdminClick = (e) => {
+        if (!e.features?.[0]) return;
+        const b = bbox(e.features[0]);
+        map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 60, duration: 1400, maxZoom: 8 });
+      };
+
       ['regions-fill-intl', 'regions-fill-fr'].forEach(l => map.on('click', l, onRegionClick));
       map.on('click', 'bassins-fill', onBassinClick);
+      ['fr-regions-fill', 'it-regions-fill', 'es-regions-fill'].forEach(l => map.on('click', l, onAdminClick));
 
       map.on('dblclick', () => {
         onRegionSelect(null);
@@ -577,6 +688,106 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
       map.on('moveend', () => { if (isItalyInView()) loadItalyWineData(); });
       if (isItalyInView()) loadItalyWineData();
 
+      // ── Spain wine DO zones (lazy loading) ────────────────────────────────
+
+      function isSpainInView() {
+        const b = map.getBounds();
+        return b.getEast() > SPAIN_BOUNDS.west && b.getWest() < SPAIN_BOUNDS.east
+            && b.getNorth() > SPAIN_BOUNDS.south && b.getSouth() < SPAIN_BOUNDS.north;
+      }
+
+      async function loadSpainWineData() {
+        if (spainLoadedRef.current) return;
+        spainLoadedRef.current = true;
+
+        let data;
+        try {
+          const res = await fetch('/data/spain-wines.geojson');
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          data = await res.json();
+        } catch (err) {
+          console.warn('Spain wine data not available:', err.message);
+          spainLoadedRef.current = false;
+          return;
+        }
+
+        if (map.getSource(SPAIN_SRC)) return;
+        map.addSource(SPAIN_SRC, { type: 'geojson', data, generateId: true });
+
+        map.addLayer({
+          id: 'spain-wine-zones', type: 'fill', source: SPAIN_SRC,
+          paint: {
+            'fill-color': SPAIN_TYPE_COLOR,
+            'fill-opacity': ['case', ['boolean', ['feature-state', 'hovered'], false], 0.80, 0.55],
+          },
+        });
+
+        map.addLayer({
+          id: 'spain-wine-borders', type: 'line', source: SPAIN_SRC,
+          paint: {
+            'line-color': '#ffffff',
+            'line-width': ['interpolate', ['linear'], ['zoom'], 5, 0.3, 12, 1.5],
+            'line-opacity': 0.6,
+          },
+        });
+
+        map.addLayer({
+          id: 'spain-wine-labels', type: 'symbol', source: SPAIN_SRC,
+          minzoom: 7,
+          layout: {
+            'text-field': ['get', 'NOMBRE'],
+            'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+            'text-size': ['interpolate', ['linear'], ['zoom'], 7, 8, 12, 13],
+            'text-anchor': 'center', 'text-allow-overlap': false, 'text-max-width': 8,
+          },
+          paint: {
+            'text-color': '#1C0A00', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5,
+            'text-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0, 8, 1],
+          },
+        });
+
+        const spainHover = { id: null };
+        map.on('mousemove', 'spain-wine-zones', (e) => {
+          const feat = e.features?.[0];
+          if (!feat) return;
+          if (spainHover.id != null) map.setFeatureState({ source: SPAIN_SRC, id: spainHover.id }, { hovered: false });
+          spainHover.id = feat.id;
+          map.setFeatureState({ source: SPAIN_SRC, id: feat.id }, { hovered: true });
+          map.getCanvas().style.cursor = 'pointer';
+          const p = feat.properties;
+          popupRef.current
+            .setLngLat(e.lngLat)
+            .setHTML(`<div style="background:#1C0A00;border:1px solid #5A2800;border-radius:8px;padding:8px 12px;color:#F5EDD8">
+              <div style="font-size:13px;font-weight:600;font-family:'Playfair Display',serif">${p.NOMBRE ?? p.DENOMINACI ?? '?'}</div>
+              <div style="color:#D4A96A;font-size:10px;margin-top:2px;font-family:Inter,sans-serif">${p.TIPO ?? ''} · Spanje</div>
+            </div>`)
+            .addTo(map);
+        });
+        map.on('mouseleave', 'spain-wine-zones', () => {
+          if (spainHover.id != null) map.setFeatureState({ source: SPAIN_SRC, id: spainHover.id }, { hovered: false });
+          spainHover.id = null;
+          map.getCanvas().style.cursor = '';
+          popupRef.current.remove();
+        });
+
+        map.on('click', 'spain-wine-zones', (e) => {
+          const feat = e.features?.[0];
+          if (!feat) return;
+          const geom = feat.geometry;
+          const rings = geom?.type === 'MultiPolygon'
+            ? geom.coordinates.flatMap(p => p[0])
+            : [geom.coordinates[0]];
+          const bounds = rings.flat().reduce(
+            (b, c) => b.extend(c),
+            new mapboxgl.LngLatBounds(rings[0][0], rings[0][0]),
+          );
+          if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 60, duration: 900, maxZoom: 11 });
+        });
+      }
+
+      map.on('moveend', () => { if (isSpainInView()) loadSpainWineData(); });
+      if (isSpainInView()) loadSpainWineData();
+
       syncSource();
       syncSelection();
       syncOwned();
@@ -593,6 +804,8 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+
+      <LayerToggle visibility={visibility} toggle={toggle} />
 
       {/* Zoom level pill */}
       <div style={{
