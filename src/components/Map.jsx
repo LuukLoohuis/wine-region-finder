@@ -317,6 +317,39 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
         });
       }
 
+      // ── Admin region labels ────────────────────────────────────────────
+
+      const adminLabelPaint = (color) => ({
+        'text-color': color,
+        'text-halo-color': 'rgba(255,255,255,0.85)',
+        'text-halo-width': 1.8,
+        'text-opacity': ['interpolate', ['linear'], ['zoom'], 3.5, 0, 4.5, 1, 7.5, 0.6],
+      });
+      const adminLabelLayout = (field) => ({
+        'text-field': ['get', field],
+        'text-font': ['DIN Offc Pro Italic', 'Arial Unicode MS Regular'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 3, 10, 6, 13, 8, 11],
+        'text-anchor': 'center',
+        'text-allow-overlap': false,
+        'text-max-width': 7,
+      });
+
+      map.addLayer({ id: 'fr-regions-label', type: 'symbol', source: 'fr-regions',
+        maxzoom: 8,
+        layout: adminLabelLayout('nom'),
+        paint: adminLabelPaint('#7A2030'),
+      });
+      map.addLayer({ id: 'it-regions-label', type: 'symbol', source: 'it-regions',
+        maxzoom: 8,
+        layout: adminLabelLayout('reg_name'),
+        paint: adminLabelPaint('#4A235A'),
+      });
+      map.addLayer({ id: 'es-regions-label', type: 'symbol', source: 'es-regions',
+        maxzoom: 8,
+        layout: adminLabelLayout('shapeName'),
+        paint: adminLabelPaint('#1A3A5C'),
+      });
+
       // ── Hover handler ──────────────────────────────────────────────────
 
       const setHovered = (source, id, val) => {

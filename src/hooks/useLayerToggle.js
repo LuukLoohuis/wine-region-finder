@@ -1,9 +1,9 @@
 import { useState, useCallback } from 'react';
 
 export const LAYER_GROUPS = {
-  france: ['fr-regions-fill', 'fr-regions-line', 'fr-depts-line'],
-  italy:  ['it-regions-fill', 'it-regions-line', 'it-provinces-line'],
-  spain:  ['es-regions-fill', 'es-regions-line'],
+  france: ['fr-regions-fill', 'fr-regions-line', 'fr-depts-line', 'fr-regions-label'],
+  italy:  ['it-regions-fill', 'it-regions-line', 'it-provinces-line', 'it-regions-label'],
+  spain:  ['es-regions-fill', 'es-regions-line', 'es-regions-label'],
 };
 
 export function useLayerToggle(mapRef) {
