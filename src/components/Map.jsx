@@ -2,15 +2,12 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import bbox from '@turf/bbox';
-import { REGIONS_GEOJSON } from '../data/wineRegions.js';
 import LayerToggle from './LayerToggle.jsx';
 import { useLayerToggle } from '../hooks/useLayerToggle.js';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN ?? '';
 
-const SOURCE  = 'wine-regions';
 const BASSINS = 'france-bassins';
-const OWNED   = 'owned-regions';
 const AOC_SRC = 'aoc-appellations';
 const AOC_TILESET = import.meta.env.VITE_APPELLATION_TILESET ?? 'luuk-loohuis.france-wine-aop';
 const ITALY_SRC    = 'italy-wine-municipalities';
@@ -31,26 +28,6 @@ const ZOOM_XOVER = 6.0; // zoom where regions → bassins crossover
 const ZOOM_AOC   = 8.0; // zoom where bassins → AOC appellations
 
 // ─── Data helpers ────────────────────────────────────────────────────────────
-
-function buildGeoJSON(collection, pulsingId) {
-  const counts = {};
-  collection.forEach(b => { if (b.region) counts[b.region] = (counts[b.region] ?? 0) + 1; });
-  return {
-    ...REGIONS_GEOJSON,
-    features: REGIONS_GEOJSON.features.map(f => ({
-      ...f,
-      properties: { ...f.properties, bottle_count: counts[f.properties.id] ?? 0 },
-    })),
-  };
-}
-
-function buildOwnedGeoJSON(collection) {
-  const ids = new Set(collection.map(b => b.region).filter(Boolean));
-  return {
-    type: 'FeatureCollection',
-    features: REGIONS_GEOJSON.features.filter(f => ids.has(f.properties.id)),
-  };
-}
 
 function getFitBounds(feature) {
   const geom = feature.geometry;
@@ -145,30 +122,6 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
 
   const selectedRef = useRef(selectedRegion);
   useEffect(() => { selectedRef.current = selectedRegion; }, [selectedRegion]);
-
-  // ── Sync callbacks ──────────────────────────────────────────────────────
-
-  const syncSource = useCallback(() => {
-    const map = mapRef.current;
-    if (!map?.getSource(SOURCE)) return;
-    map.getSource(SOURCE).setData(buildGeoJSON(collection, pulsingRegion));
-  }, [collection, pulsingRegion]);
-
-  const syncSelection = useCallback(() => {
-    const map = mapRef.current;
-    ['regions-outline-intl', 'regions-outline-fr'].forEach(layer => {
-      if (!map?.getLayer(layer)) return;
-      map.setPaintProperty(layer, 'line-width', [
-        'case', ['==', ['get', 'id'], selectedRegion ?? '__none__'], 3, 0.8,
-      ]);
-    });
-  }, [selectedRegion]);
-
-  const syncOwned = useCallback(() => {
-    const map = mapRef.current;
-    if (!map?.getSource(OWNED)) return;
-    map.getSource(OWNED).setData(buildOwnedGeoJSON(collection));
-  }, [collection]);
 
   // ── Init map ────────────────────────────────────────────────────────────
 
@@ -270,40 +223,13 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
           'line-opacity': 0.65 } });
 
       // ── Sources ────────────────────────────────────────────────────────
-      map.addSource(SOURCE,  { type: 'geojson', data: buildGeoJSON([], null), generateId: true });
       map.addSource(BASSINS, { type: 'geojson', data: '/data/france-bassins.geojson', generateId: true });
-      map.addSource(OWNED,   { type: 'geojson', data: buildOwnedGeoJSON([]) });
       // AOC vector tileset — added only if env var is configured
       if (AOC_TILESET) {
         map.addSource(AOC_SRC, { type: 'vector', url: `mapbox://${AOC_TILESET}` });
       }
 
       // ── Fill layers ────────────────────────────────────────────────────
-
-      // Non-France regions (always visible)
-      map.addLayer({
-        id: 'regions-fill-intl', type: 'fill', source: SOURCE,
-        filter: ['!=', ['get', 'country'], 'FR'],
-        paint: {
-          'fill-color': ['get', 'color'],
-          'fill-opacity': ['case', ['boolean', ['feature-state', 'hovered'], false], 0.92, 0.72],
-        },
-      });
-
-      // French large regions (fade out as bassins appear)
-      map.addLayer({
-        id: 'regions-fill-fr', type: 'fill', source: SOURCE,
-        filter: ['==', ['get', 'country'], 'FR'],
-        maxzoom: ZOOM_XOVER + 1,
-        paint: {
-          'fill-color': ['get', 'color'],
-          'fill-opacity': [
-            'interpolate', ['linear'], ['zoom'],
-            ZOOM_XOVER - 0.5, ['case', ['boolean', ['feature-state', 'hovered'], false], 0.92, 0.72],
-            ZOOM_XOVER + 0.5, 0,
-          ],
-        },
-      });
 
       // France bassins (accurate INAO polygons, fade in)
       map.addLayer({
@@ -332,29 +258,7 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
         });
       }
 
-      // Owned regions glow fill
-      map.addLayer({
-        id: 'owned-fill', type: 'fill', source: OWNED,
-        paint: { 'fill-color': '#D4A96A', 'fill-opacity': 0.18 },
-      });
-
       // ── Outline layers ─────────────────────────────────────────────────
-
-      map.addLayer({
-        id: 'regions-outline-intl', type: 'line', source: SOURCE,
-        filter: ['!=', ['get', 'country'], 'FR'],
-        paint: { 'line-color': '#ffffff', 'line-width': 0.8 },
-      });
-
-      map.addLayer({
-        id: 'regions-outline-fr', type: 'line', source: SOURCE,
-        filter: ['==', ['get', 'country'], 'FR'],
-        maxzoom: ZOOM_XOVER + 1,
-        paint: {
-          'line-color': '#ffffff', 'line-width': 0.8,
-          'line-opacity': ['interpolate', ['linear'], ['zoom'], ZOOM_XOVER - 0.5, 0.9, ZOOM_XOVER + 0.5, 0],
-        },
-      });
 
       map.addLayer({
         id: 'bassins-outline', type: 'line', source: BASSINS,
@@ -379,26 +283,7 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
         });
       }
 
-      map.addLayer({
-        id: 'owned-outline', type: 'line', source: OWNED,
-        paint: { 'line-color': '#D4A96A', 'line-width': 2.5, 'line-opacity': 0.9 },
-      });
-
       // ── Label layers ───────────────────────────────────────────────────
-
-      map.addLayer({
-        id: 'regions-labels', type: 'symbol', source: SOURCE,
-        minzoom: 4, maxzoom: ZOOM_XOVER + 0.5,
-        layout: {
-          'text-field': ['get', 'name'],
-          'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
-          'text-size': 11, 'text-anchor': 'center', 'text-allow-overlap': false,
-        },
-        paint: {
-          'text-color': '#2C1A00', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5,
-          'text-opacity': ['interpolate', ['linear'], ['zoom'], 3.5, 0, 4.5, 1],
-        },
-      });
 
       map.addLayer({
         id: 'bassins-labels', type: 'symbol', source: BASSINS,
@@ -456,22 +341,16 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
         map.getCanvas().style.cursor = 'pointer';
 
         const p = feat.properties;
-        const name    = source === BASSINS ? (BASSIN_LABELS[p.Bassin] ?? p.Bassin) : p.name;
-        const country = source === BASSINS ? 'FR' : p.country;
-        const btl     = source === BASSINS ? '' : ` · ${p.bottle_count ?? 0} fles${(p.bottle_count ?? 0) !== 1 ? 'sen' : ''}`;
+        const name = BASSIN_LABELS[p.Bassin] ?? p.Bassin;
         popupRef.current
           .setLngLat(e.lngLat)
           .setHTML(`<div style="background:#1C0A00;border:1px solid #5A2800;border-radius:8px;padding:8px 12px;color:#F5EDD8">
             <div style="font-size:13px;font-weight:600;font-family:'Playfair Display',serif">${name}</div>
-            <div style="color:#D4A96A;font-size:10px;margin-top:2px;font-family:Inter,sans-serif">${country}${btl}</div>
+            <div style="color:#D4A96A;font-size:10px;margin-top:2px;font-family:Inter,sans-serif">FR</div>
           </div>`)
           .addTo(map);
       };
 
-      ['regions-fill-intl', 'regions-fill-fr'].forEach(l => {
-        map.on('mousemove', l, onHover(SOURCE));
-        map.on('mouseleave', l, clearHover);
-      });
       map.on('mousemove', 'bassins-fill', onHover(BASSINS));
       map.on('mouseleave', 'bassins-fill', clearHover);
 
@@ -523,13 +402,6 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
 
       // ── Click handlers ─────────────────────────────────────────────────
 
-      const onRegionClick = (e) => {
-        const id = e.features[0].properties.id;
-        const newSel = id === selectedRef.current ? null : id;
-        onRegionSelect(newSel);
-        if (newSel) map.fitBounds(getFitBounds(e.features[0]), { padding: 80, duration: 900, maxZoom: 8.5 });
-      };
-
       const onBassinClick = (e) => {
         map.fitBounds(getFitBounds(e.features[0]), { padding: 60, duration: 900, maxZoom: 9 });
       };
@@ -540,7 +412,6 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
         map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 60, duration: 1400, maxZoom: 8 });
       };
 
-      ['regions-fill-intl', 'regions-fill-fr'].forEach(l => map.on('click', l, onRegionClick));
       map.on('click', 'bassins-fill', onBassinClick);
       ['fr-regions-fill', 'it-regions-fill', 'es-regions-fill'].forEach(l => map.on('click', l, onAdminClick));
 
@@ -788,18 +659,11 @@ export default function Map({ collection, selectedRegion, onRegionSelect, pulsin
       map.on('moveend', () => { if (isSpainInView()) loadSpainWineData(); });
       if (isSpainInView()) loadSpainWineData();
 
-      syncSource();
-      syncSelection();
-      syncOwned();
     });
 
     return () => { map.remove(); mapRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => { syncSource();    }, [syncSource]);
-  useEffect(() => { syncSelection(); }, [syncSelection]);
-  useEffect(() => { syncOwned();     }, [syncOwned]);
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
